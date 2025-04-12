@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Telegram Pay - Pagamento via PIX</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      text-align: center;
+      padding: 20px;
+      background-color: #f9fafb;
+      color: #333;
+      margin: 0;
+    }
+    .container {
+      max-width: 420px;
+      margin: auto;
+      background: white;
+      padding: 25px;
+      border-radius: 20px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    }
+    h2 {
+      color: #0088cc;
+    }
+    input, button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 12px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    input {
+      background: #f2f2f2;
+    }
+    button {
+      background: #0088cc;
+      color: white;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #006fa3;
+    }
+    #codigoPix, #confirmacaoPagamento, #botaoAcesso, #qrCodeContainer { display: none; }
+
+    #loadingScreen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      flex-direction: column;
+    }
+    .loading-spinner {
+      border: 8px solid #f3f3f3;
+      border-top: 8px solid #0088cc;
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    #loadingScreen p {
+      color: #fff;
+      font-size: 18px;
+      margin-top: 15px;
+      text-align: center;
+      padding: 0 20px;
+    }
+    #qrCodeContainer {
+      display: flex;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    #qrCodeContainer img {
+      width: 220px;
+      border-radius: 12px;
+      border: 2px solid #ddd;
+    }
+    #codigoPix p {
+      font-size: 15px;
+      margin-top: 20px;
+      color: #444;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Pagamento via PIX</h2>
+    <p><strong>Aguarde nesta página após o pagamento.</strong><br/>Você será redirecionado automaticamente ao grupo VIP.</p>
+    <input type="text" id="valor" placeholder="Digite o valor" oninput="formatarValor()">
+    <button id="gerarBotao" onclick="gerarPixCustom()">Gerar PIX</button>
+    <p id="loading" style="display: none;">Gerando PIX...</p>
+
+    <div id="codigoPix">
+      <p>Copie o código abaixo ou escaneie o QR Code:</p>
+      <input type="text" id="pixCode" readonly>
+      <button onclick="copiarPix()">Copiar Código PIX</button>
+      <div id="qrCodeContainer"></div>
+    </div>
+
+    <input type="text" id="paymentStatus" readonly>
+    <div id="confirmacaoPagamento">✅ Pagamento Aprovado!</div>
+    <button id="botaoAcesso" onclick="window.location.href='https://loisehot.netlify.app/'">Acessar Conteúdo</button>
+  </div>
+
+  <div id="loadingScreen">
+    <div class="loading-spinner"></div>
+    <p>Aguarde enquanto o pagamento está sendo processado...<br/>Você será redirecionado automaticamente.</p>
+  </div>
+
+  <script>
+    const apiKey = "23775|YvgxtmIpIE2Lawz25KmOGcZKB1t9WXTnTi4ClpjQf54da2fb";
+    let transactionId = null;
+    let notificou = false;
+
+    function formatarValor() {
+      let input = document.getElementById("valor");
+      input.value = input.value.replace(/[^0-9,]/g, "").replace(/^0+/, '');
+    }
+
+    function converterParaCentavos(valor) {
+      valor = valor.replace(",", ".");
+      return Math.round(parseFloat(valor) * 100);
+    }
+
+    async function gerarPix(valor) {
+      let valorEmCentavos = converterParaCentavos(valor);
+      let requestBody = { value: valorEmCentavos };
+
+      try {
+        let response = await fetch("https://api.pushinpay.com.br/api/pix/cashIn", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        let data = await response.json();
+
+        if (data.qr_code) {
+          transactionId = data.id;
+          document.getElementById('pixCode').value = data.qr_code;
+          document.getElementById('codigoPix').style.display = 'block';
+          document.getElementById('paymentStatus').value = "Pix Aguardando Pagamento...";
+          gerarQRCode(data.qr_code);
+        } else {
+          alert("Erro ao gerar PIX! Verifique sua API Key.");
+        }
+      } catch (error) {
+        console.error("Erro ao gerar PIX:", error);
+        alert("Falha na comunicação com a PushinPay.");
+      }
+    }
+
+    function gerarPixCustom() {
+      let valor = document.getElementById('valor').value;
+      if (!valor.trim()) {
+        alert("Digite um valor válido!");
+        return;
+      }
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('gerarBotao').disabled = true;
+      gerarPix(valor).finally(() => {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('gerarBotao').disabled = false;
+      });
+    }
+
+    async function verificarPagamento() {
+      if (!transactionId) {
+        alert("Nenhuma transação foi gerada ainda.");
+        return;
+      }
+
+      try {
+        let response = await fetch(`https://api.pushinpay.com.br/api/transactions/${transactionId}`, {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json"
+          }
+        });
+
+        let data = await response.json();
+
+        if (data.status === "paid") {
+          document.getElementById('loadingScreen').style.display = 'none';
+          document.getElementById('confirmacaoPagamento').style.display = 'block';
+          document.getElementById('botaoAcesso').style.display = 'block';
+          setTimeout(() => {
+            window.location.href = 'https://loisehot.netlify.app/';
+          }, 3000);
+        } else {
+          setTimeout(verificarPagamento, 3000);
+        }
+      } catch (error) {
+        console.error("Erro ao verificar pagamento:", error);
+        alert("Falha ao verificar pagamento.");
+      }
+    }
+
+    function copiarPix() {
+      let pixCode = document.getElementById('pixCode');
+      if (pixCode.value) {
+        navigator.clipboard.writeText(pixCode.value);
+        alert("Código PIX copiado!");
+        if (!notificou) {
+          notificou = true;
+          fetch('https://api.pushcut.io/JX60URSeGYXjFKP4bbP9P/notifications/Pix%20Gerado%20R$' + document.getElementById('valor').value);
+        }
+        document.getElementById('loadingScreen').style.display = 'flex';
+        verificarPagamento();
+      }
+    }
+
+    function gerarQRCode(pixCode) {
+      const container = document.getElementById("qrCodeContainer");
+      container.innerHTML = '';
+      const qrImg = document.createElement("img");
+      qrImg.src = `https://chart.googleapis.com/chart?chs=250x250&cht=qr&chl=${encodeURIComponent(pixCode)}`;
+      qrImg.alt = "QR Code PIX";
+      container.appendChild(qrImg);
+      container.style.display = 'flex';
+    }
+  </script>
+</body>
+</html>
